@@ -315,7 +315,239 @@ function EntryModal({type,contacts,editEntry,onSave,onClose}){
   );
 }
 
-// ── PDF Generator ────────────────────────────────────────────────────────────
+// ── Vendor Report PDF ────────────────────────────────────────────────────────
+function generateVendorReportPDF(vendor, hires, advances, prevDue, totalAdv, balance, month){
+  const fmt=n=>`₹${Number(n||0).toLocaleString("en-IN")}`;
+  const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const d=new Date(month+"-01");
+  const mLabel=`${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  // Count days per item
+  const itemDays={};
+  hires.forEach(h=>h.items.forEach(it=>{
+    const eq=VEN_EQ.find(e=>e.id===it.equipmentId);
+    const nm=it.customName||eq?.name||it.equipmentId;
+    itemDays[nm]=(itemDays[nm]||0)+it.qty;
+  }));
+  const totalAmt=hires.reduce((s,h)=>s+h.items.reduce((a,i)=>a+i.amount,0),0);
+
+  let daysRows=Object.entries(itemDays).map(([nm,days])=>`
+    <tr><td style="padding:9px 14px;border-bottom:1px solid #f0f0f0;font-weight:600;">${nm}</td>
+    <td style="padding:9px 14px;text-align:right;border-bottom:1px solid #f0f0f0;font-weight:800;color:#7c3aed;">${days} day${days>1?"s":""}</td>
+    <td style="padding:9px 14px;text-align:right;border-bottom:1px solid #f0f0f0;"></td></tr>`).join("");
+
+  let hireRows=hires.map(h=>{
+    const hAmt=h.items.reduce((s,i)=>s+i.amount,0);
+    return `<tr><td style="padding:9px 14px;border-bottom:1px solid #f0f0f0;">${h.date}${h.programme?" · "+h.programme:""}${h.location?" · "+h.location:""}</td>
+    <td style="padding:9px 14px;text-align:right;border-bottom:1px solid #f0f0f0;">${h.items.map(i=>{const eq=VEN_EQ.find(e=>e.id===i.equipmentId);return(i.customName||eq?.name||i.equipmentId)+" ×"+i.qty;}).join(", ")}</td>
+    <td style="padding:9px 14px;text-align:right;border-bottom:1px solid #f0f0f0;font-weight:700;color:#7c3aed;">${fmt(hAmt)}</td></tr>`;
+  }).join("");
+
+  let advRows=advances.map(a=>`
+    <tr><td style="padding:9px 14px;border-bottom:1px solid #f0f0f0;">${a.date}</td>
+    <td style="padding:9px 14px;border-bottom:1px solid #f0f0f0;">${a.note||"—"}</td>
+    <td style="padding:9px 14px;text-align:right;border-bottom:1px solid #f0f0f0;font-weight:700;color:#c05621;">${fmt(a.amount)}</td></tr>`).join("");
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Vendor Report - ${vendor.name}</title>
+  <style>body{font-family:'Segoe UI',sans-serif;margin:0;padding:30px 20px;max-width:700px;margin:0 auto;}table{width:100%;border-collapse:collapse;}@media print{body{padding:10px;}}</style>
+  </head><body>
+  <div style="background:linear-gradient(135deg,#1a0533,#7c3aed);padding:24px 28px;border-radius:12px;color:#fff;margin-bottom:22px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div>
+        <div style="font-family:Georgia,serif;font-size:28px;font-weight:700;">VENDOR REPORT</div>
+        <div style="font-size:11px;color:#c4b5fd;letter-spacing:3px;margin-top:3px;text-transform:uppercase;">Templecity Entertainment</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:12px;color:#ddd6fe;">Period</div>
+        <div style="font-size:18px;font-weight:700;">${mLabel}</div>
+      </div>
+    </div>
+    <div style="margin-top:16px;padding:12px 16px;background:rgba(255,255,255,0.1);border-radius:8px;">
+      <div style="font-size:10px;color:#c4b5fd;letter-spacing:2px;text-transform:uppercase;">Vendor</div>
+      <div style="font-size:18px;font-weight:700;margin-top:3px;">${vendor.name}</div>
+      <div style="font-size:13px;color:#ddd6fe;">${vendor.email||""}${vendor.phone?" · "+vendor.phone:""}</div>
+    </div>
+  </div>
+
+  ${Object.keys(itemDays).length>0?`
+  <h3 style="font-size:14px;font-weight:700;color:#1a202c;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.5px;">Days Worked</h3>
+  <table style="border:1.5px solid #e9d5ff;border-radius:10px;overflow:hidden;margin-bottom:20px;">
+    <thead><tr style="background:#faf5ff;">
+      <th style="padding:9px 14px;text-align:left;font-size:11px;color:#718096;text-transform:uppercase;">Item</th>
+      <th style="padding:9px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Days</th>
+      <th></th>
+    </tr></thead>
+    <tbody>${daysRows}</tbody>
+  </table>`:""}
+
+  ${hires.length>0?`
+  <h3 style="font-size:14px;font-weight:700;color:#1a202c;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.5px;">Hire Details</h3>
+  <table style="border:1.5px solid #e9d5ff;border-radius:10px;overflow:hidden;margin-bottom:20px;">
+    <thead><tr style="background:#faf5ff;">
+      <th style="padding:9px 14px;text-align:left;font-size:11px;color:#718096;text-transform:uppercase;">Date / Programme</th>
+      <th style="padding:9px 14px;text-align:left;font-size:11px;color:#718096;text-transform:uppercase;">Items</th>
+      <th style="padding:9px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Amount</th>
+    </tr></thead>
+    <tbody>${hireRows}</tbody>
+  </table>`:""}
+
+  ${advances.length>0?`
+  <h3 style="font-size:14px;font-weight:700;color:#c05621;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.5px;">Advances Given</h3>
+  <table style="border:1.5px solid #fde68a;border-radius:10px;overflow:hidden;margin-bottom:20px;">
+    <thead><tr style="background:#fffbeb;">
+      <th style="padding:9px 14px;text-align:left;font-size:11px;color:#718096;text-transform:uppercase;">Date</th>
+      <th style="padding:9px 14px;text-align:left;font-size:11px;color:#718096;text-transform:uppercase;">Note</th>
+      <th style="padding:9px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Amount</th>
+    </tr></thead>
+    <tbody>${advRows}</tbody>
+  </table>`:""}
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;">
+    <div style="background:#faf5ff;border:1.5px solid #e9d5ff;border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:11px;color:#718096;font-weight:600;">Total Work</div>
+      <div style="font-size:20px;font-weight:800;color:#7c3aed;font-family:Georgia,serif;">${fmt(totalAmt)}</div>
+    </div>
+    <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:11px;color:#718096;font-weight:600;">Advances</div>
+      <div style="font-size:20px;font-weight:800;color:#c05621;font-family:Georgia,serif;">${fmt(totalAdv)}</div>
+    </div>
+    <div style="background:${balance<=0?"#f0fdf4":"#faf5ff"};border:1.5px solid ${balance<=0?"#bbf7d0":"#e9d5ff"};border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:11px;color:#718096;font-weight:600;">I Still Owe</div>
+      <div style="font-size:20px;font-weight:800;color:${balance<=0?"#065f46":"#7c3aed"};font-family:Georgia,serif;">${balance<=0?"✅ Settled":fmt(balance)}</div>
+    </div>
+  </div>
+  <div style="margin-top:20px;text-align:center;font-size:11px;color:#a0aec0;">Templecity Entertainment — Equipment Rental</div>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+  a.download=`Vendor_${vendor.name.replace(/\s+/g,"_")}_${month}.html`;
+  a.click();
+}
+
+// ── Per-Job PDF ───────────────────────────────────────────────────────────────
+function generateJobPDF(entry, contactName, eqList){
+  const fmt=n=>`₹${Number(n||0).toLocaleString("en-IN")}`;
+  const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const fmtD=s=>{if(!s)return"";const d=new Date(s);return`${d.getDate()} ${MONTHS[d.getMonth()].slice(0,3)} ${d.getFullYear()}`;};
+  const total=entry.items.reduce((s,i)=>s+i.amount,0);
+  let rows="";
+  entry.items.forEach(item=>{
+    const eq=eqList.find(e=>e.id===item.equipmentId);
+    const name=item.customName||eq?.name||item.equipmentId;
+    rows+=`<tr><td style="padding:9px 14px;border-bottom:1px solid #f0f0f0;">${name}</td><td style="padding:9px 14px;text-align:right;border-bottom:1px solid #f0f0f0;">${item.qty}</td><td style="padding:9px 14px;text-align:right;border-bottom:1px solid #f0f0f0;">${fmt(item.rate)}</td><td style="padding:9px 14px;text-align:right;border-bottom:1px solid #f0f0f0;font-weight:700;color:#065f46;">${fmt(item.amount)}</td></tr>`;
+  });
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Job Invoice</title>
+  <style>body{font-family:'Segoe UI',sans-serif;margin:0;padding:30px 20px;max-width:650px;margin:0 auto;}@media print{body{padding:10px;}}</style>
+  </head><body>
+  <div style="background:linear-gradient(135deg,#0d1b2a,#1b4332);padding:24px 28px;border-radius:12px;color:#fff;margin-bottom:22px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div>
+        <div style="font-family:Georgia,serif;font-size:28px;font-weight:700;">JOB INVOICE</div>
+        <div style="font-size:11px;color:#6ee7b7;letter-spacing:3px;margin-top:3px;text-transform:uppercase;">Templecity Entertainment</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:12px;color:#a7f3d0;">Date</div>
+        <div style="font-size:18px;font-weight:700;">${fmtD(entry.date)}</div>
+      </div>
+    </div>
+    <div style="margin-top:16px;padding:12px 16px;background:rgba(255,255,255,0.1);border-radius:8px;">
+      <div style="font-size:10px;color:#6ee7b7;letter-spacing:2px;text-transform:uppercase;">Client</div>
+      <div style="font-size:18px;font-weight:700;margin-top:3px;">${contactName}</div>
+      ${entry.programme?`<div style="font-size:13px;color:#a7f3d0;margin-top:2px;">🎬 ${entry.programme}${entry.location?" · 📍 "+entry.location:""}</div>`:""}
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;border:1.5px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <thead><tr style="background:#f7fafc;">
+      <th style="padding:9px 14px;text-align:left;font-size:11px;color:#718096;text-transform:uppercase;letter-spacing:1px;">Equipment</th>
+      <th style="padding:9px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Qty</th>
+      <th style="padding:9px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Rate</th>
+      <th style="padding:9px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Amount</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:linear-gradient(135deg,#0d1b2a,#1b4332);border-radius:10px;margin-top:16px;">
+    <span style="font-size:16px;font-weight:700;color:#fff;">Total</span>
+    <span style="font-size:28px;font-weight:800;color:#6ee7b7;font-family:Georgia,serif;">${fmt(total)}</span>
+  </div>
+  ${entry.notes?`<div style="margin-top:14px;padding:12px 16px;background:#f7fafc;border-radius:8px;font-size:13px;color:#718096;">📝 ${entry.notes}</div>`:""}
+  <div style="margin-top:20px;text-align:center;font-size:11px;color:#a0aec0;">Templecity Entertainment — Equipment Rental</div>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+  a.download=`Job_${contactName.replace(/\s+/g,"_")}_${entry.date}.html`;
+  a.click();
+}
+
+// ── Month Summary PDF ─────────────────────────────────────────────────────────
+function generateMonthlySummaryPDF(clients, jobs, payments, cDues, month){
+  const fmt=n=>`₹${Number(n||0).toLocaleString("en-IN")}`;
+  const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const d=new Date(month+"-01");
+  const mLabel=`${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  const mJobs=jobs.filter(j=>j.date.startsWith(month));
+  let rows="";
+  let grandTotal=0, grandPaid=0, grandBalance=0;
+  clients.forEach(c=>{
+    const cj=mJobs.filter(j=>j.clientId===c.id);
+    const amt=cj.reduce((s,j)=>s+j.items.reduce((a,i)=>a+i.amount,0),0);
+    const prev=cDues[c.id]||0;
+    const paid=(payments||[]).filter(p=>p.contactId===c.id&&p.date.startsWith(month)).reduce((s,p)=>s+p.amount,0);
+    const balance=amt+prev-paid;
+    if(!amt&&!prev) return;
+    grandTotal+=amt+prev; grandPaid+=paid; grandBalance+=balance;
+    rows+=`<tr style="border-bottom:1px solid #f0f0f0;">
+      <td style="padding:11px 14px;font-weight:600;color:#1a202c;">${c.name}</td>
+      <td style="padding:11px 14px;text-align:center;color:#718096;">${cj.length}</td>
+      <td style="padding:11px 14px;text-align:right;color:#4a5568;">${fmt(amt)}</td>
+      <td style="padding:11px 14px;text-align:right;color:#c05621;">${prev>0?fmt(prev):"—"}</td>
+      <td style="padding:11px 14px;text-align:right;color:#065f46;">${paid>0?fmt(paid):"—"}</td>
+      <td style="padding:11px 14px;text-align:right;font-weight:800;color:${balance<=0?"#065f46":"#c53030"};">${balance<=0?"✅ Cleared":fmt(balance)}</td>
+    </tr>`;
+  });
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Monthly Summary ${mLabel}</title>
+  <style>body{font-family:'Segoe UI',sans-serif;margin:0;padding:30px 20px;}table{width:100%;border-collapse:collapse;}@media print{body{padding:10px;}}</style>
+  </head><body>
+  <div style="background:linear-gradient(135deg,#0d1b2a,#1b4332);padding:24px 32px;border-radius:14px;color:#fff;margin-bottom:24px;">
+    <div style="font-family:Georgia,serif;font-size:30px;font-weight:700;">Monthly Summary</div>
+    <div style="font-size:11px;color:#6ee7b7;letter-spacing:3px;margin-top:3px;text-transform:uppercase;">Templecity Entertainment</div>
+    <div style="font-size:22px;font-weight:700;margin-top:12px;color:#a7f3d0;">${mLabel}</div>
+  </div>
+  <table style="border:1.5px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+    <thead><tr style="background:#f7fafc;border-bottom:2px solid #e2e8f0;">
+      <th style="padding:10px 14px;text-align:left;font-size:11px;color:#718096;text-transform:uppercase;">Client</th>
+      <th style="padding:10px 14px;text-align:center;font-size:11px;color:#718096;text-transform:uppercase;">Jobs</th>
+      <th style="padding:10px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Amount</th>
+      <th style="padding:10px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Prev Due</th>
+      <th style="padding:10px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Paid</th>
+      <th style="padding:10px 14px;text-align:right;font-size:11px;color:#718096;text-transform:uppercase;">Balance</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:20px;">
+    <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:16px;text-align:center;">
+      <div style="font-size:12px;color:#718096;font-weight:600;">Total Billed</div>
+      <div style="font-size:22px;font-weight:800;color:#065f46;font-family:Georgia,serif;">${fmt(grandTotal)}</div>
+    </div>
+    <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:16px;text-align:center;">
+      <div style="font-size:12px;color:#718096;font-weight:600;">Total Received</div>
+      <div style="font-size:22px;font-weight:800;color:#065f46;font-family:Georgia,serif;">${fmt(grandPaid)}</div>
+    </div>
+    <div style="background:${grandBalance>0?"#fff5f5":"#f0fdf4"};border:1.5px solid ${grandBalance>0?"#fed7d7":"#bbf7d0"};border-radius:10px;padding:16px;text-align:center;">
+      <div style="font-size:12px;color:#718096;font-weight:600;">Total Balance</div>
+      <div style="font-size:22px;font-weight:800;color:${grandBalance>0?"#c53030":"#065f46"};font-family:Georgia,serif;">${grandBalance<=0?"✅ All Clear":fmt(grandBalance)}</div>
+    </div>
+  </div>
+  <div style="margin-top:20px;text-align:center;font-size:11px;color:#a0aec0;">Generated by Templecity Entertainment Rental Manager</div>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+  a.download=`Monthly_Summary_${month}.html`;
+  a.click();
+}
+
+// ── PDF Generator ────────────────────────────────────────────────────────────────
 function generatePDF(contact, jobs, prevDue, totalPaid, balance, month){
   const d=new Date(month+"-01");
   const mLabel=`${["January","February","March","April","May","June","July","August","September","October","November","December"][d.getMonth()]} ${d.getFullYear()}`;
@@ -623,6 +855,7 @@ function App(){
   const [modal,setModal]         = useState(null); // {type,entry?}
   const [billModal,setBillModal] = useState(null); // {type,contact}
   const [toast,setToast]         = useState(null);
+  const [reportType,setReportType] = useState("client");
   const [newC,setNewC]           = useState({name:"",email:"",phone:""});
   const [newV,setNewV]           = useState({name:"",email:"",phone:""});
 
@@ -696,6 +929,7 @@ function App(){
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <span style={{fontSize:16,fontWeight:800,color:accent,fontFamily:"Georgia,serif"}}>{fmt(total)}</span>
+            {isIncome&&<button onClick={()=>generateJobPDF(entry,contact?.name||"Client",MY_EQ)} style={{padding:"4px 10px",background:"#f0fdf4",color:"#065f46",border:"1px solid #bbf7d0",borderRadius:5,cursor:"pointer",fontSize:11,fontWeight:600}}>📄 PDF</button>}
             <button onClick={()=>setModal({type,entry})} style={{padding:"4px 10px",background:"#ebf8ff",color:"#2b6cb0",border:"1px solid #bee3f8",borderRadius:5,cursor:"pointer",fontSize:11,fontWeight:600}}>Edit</button>
             <button onClick={()=>delEntry(type,entry.id)} style={{padding:"4px 10px",background:"#fff5f5",color:"#c53030",border:"1px solid #fed7d7",borderRadius:5,cursor:"pointer",fontSize:11,fontWeight:600}}>Del</button>
           </div>
@@ -720,7 +954,7 @@ function App(){
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#fff",fontWeight:800}}>Templecity Entertainment</div>
           <div style={{fontSize:10,color:"#4a5568",letterSpacing:"2px",textTransform:"uppercase",marginTop:4}}>Equipment Rental Manager</div>
         </div>
-        {[["dashboard","📊","Dashboard"],["income","💰","Income (Clients)"],["expense","💸","Expense (Vendors)"],["contacts","👥","Contacts"]].map(([k,ic,lb])=>(
+        {[["dashboard","📊","Dashboard"],["income","💰","Income (Clients)"],["expense","💸","Expense (Vendors)"],["reports","📑","Monthly Reports"],["contacts","👥","Contacts"]].map(([k,ic,lb])=>(
           <button key={k} onClick={()=>setView(k)} style={{display:"block",width:"100%",textAlign:"left",padding:"11px 14px",marginBottom:4,background:view===k?"rgba(255,255,255,0.13)":"transparent",border:view===k?"1px solid rgba(196,181,253,0.3)":"1px solid transparent",borderRadius:10,color:view===k?"#c4b5fd":"#718096",cursor:"pointer",fontSize:14,fontWeight:view===k?"700":"400"}}>
             {ic} {lb}
           </button>
@@ -741,7 +975,7 @@ function App(){
 
       {/* Bottom Nav (mobile) */}
       <div className="bottom-nav no-print">
-        {[["dashboard","📊","Home"],["income","💰","Income"],["expense","💸","Expense"],["contacts","👥","Contacts"]].map(([k,ic,lb])=>(
+        {[["dashboard","📊","Home"],["income","💰","Income"],["expense","💸","Expense"],["reports","📑","Reports"],["contacts","👥","Contacts"]].map(([k,ic,lb])=>(
           <button key={k} onClick={()=>setView(k)} className={view===k?"active":""}>
             <span className="ico">{ic}</span>{lb}
           </button>
@@ -847,7 +1081,8 @@ function App(){
               </div>
               <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                 <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:13,color:"#1a202c",background:"#fff",outline:"none"}}/>
-                <button onClick={()=>setModal({type:"income"})} style={{padding:"9px 18px",background:"linear-gradient(135deg,#0d1b2a,#1b4332)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>＋ New Job</button>
+                <button onClick={()=>generateMonthlySummaryPDF(clients,jobs,payments,cDues,selMonth)} style={{padding:"9px 16px",background:"#065f46",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>📊 Month PDF</button>
+              <button onClick={()=>setModal({type:"income"})} style={{padding:"9px 18px",background:"linear-gradient(135deg,#0d1b2a,#1b4332)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>＋ New Job</button>
               </div>
             </div>
             {/* Bills per client */}
@@ -856,13 +1091,23 @@ function App(){
                 const cj=mJobs.filter(j=>j.clientId===c.id);
                 const amt=cj.reduce((s,j)=>s+j.items.reduce((a,i)=>a+i.amount,0),0);
                 const prev=cDues[c.id]||0;
+                const paid=(payments||[]).filter(p=>p.contactId===c.id&&p.date.startsWith(selMonth)).reduce((s,p)=>s+p.amount,0);
+                const balance=amt+prev-paid;
                 if(!amt&&!prev)return null;
                 return(
                   <div key={c.id} style={{background:"#fff",borderRadius:12,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)",borderTop:"3px solid #065f46"}}>
-                    <div style={{fontWeight:700,fontSize:14,color:"#1a202c"}}>{c.name}</div>
-                    <div style={{fontSize:12,color:"#718096",marginBottom:10}}>{cj.length} job{cj.length!==1?"s":""} this month</div>
-                    <div style={{fontSize:22,fontWeight:800,color:"#065f46",fontFamily:"Georgia,serif",marginBottom:12}}>{fmt(amt+prev)}</div>
-                    <button onClick={()=>setBillModal({type:"income",contact:c})} style={{width:"100%",padding:8,background:"linear-gradient(135deg,#0d1b2a,#1b4332)",color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontSize:13,fontWeight:700}}>📄 View Bill</button>
+                    <div style={{fontWeight:700,fontSize:15,color:"#1a202c",marginBottom:2}}>{c.name}</div>
+                    <div style={{fontSize:12,color:"#718096",marginBottom:8}}>{cj.length} job{cj.length!==1?"s":""} this month</div>
+                    {prev>0&&<div style={{fontSize:12,color:"#c05621",marginBottom:4}}>+ {fmt(prev)} prev due</div>}
+                    {paid>0&&<div style={{fontSize:12,color:"#065f46",marginBottom:4}}>− {fmt(paid)} received</div>}
+                    <div style={{fontSize:24,fontWeight:800,color:balance<=0?"#a0aec0":"#065f46",fontFamily:"Georgia,serif",marginBottom:14}}>{balance<=0?"✅ Cleared":fmt(balance)}</div>
+                    <div style={{display:"flex",gap:8,flexDirection:"column"}}>
+                      <button onClick={()=>setBillModal({type:"income",contact:c})} style={{width:"100%",padding:9,background:"linear-gradient(135deg,#0d1b2a,#1b4332)",color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontSize:13,fontWeight:700}}>📋 View Full Bill</button>
+                      <button onClick={()=>{
+                        const mj=mJobs.filter(j=>j.clientId===c.id);
+                        generatePDF(c,mj,prev,paid,balance,selMonth);
+                      }} style={{width:"100%",padding:9,background:"#f0fdf4",color:"#065f46",border:"1.5px solid #bbf7d0",borderRadius:7,cursor:"pointer",fontSize:13,fontWeight:700}}>⬇️ Download PDF</button>
+                    </div>
                   </div>
                 );
               })}
@@ -912,7 +1157,244 @@ function App(){
               })}
               {vendors.length===0&&<div style={{background:"#fff",borderRadius:12,padding:40,textAlign:"center",color:"#a0aec0",fontSize:13,gridColumn:"1/-1"}}>Add vendors in Contacts tab first</div>}
             </div>
-            {mHires.length>0&&[...mHires].reverse().map(e=><EntryCard key={e.id} entry={e} type="expense"/>)}
+            {mHires.length>0&&(
+              <div style={{marginBottom:20}}>
+                <h3 style={{fontSize:16,fontWeight:700,color:"#1a202c",marginBottom:14}}>All Hire Entries</h3>
+                {[...mHires].reverse().map(e=><EntryCard key={e.id} entry={e} type="expense"/>)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── MONTHLY REPORTS ── */}
+        {view==="reports"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:22,flexWrap:"wrap",gap:12}}>
+              <div>
+                <h1 className="page-title" style={{fontFamily:"'Playfair Display',serif",fontSize:32,color:"#0d1b2a",fontWeight:800}}>Monthly Reports</h1>
+                <p style={{color:"#718096",fontSize:13,marginTop:3}}>Detailed client & vendor reports</p>
+              </div>
+              <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
+                style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:13,color:"#1a202c",background:"#fff",outline:"none"}}/>
+            </div>
+
+            {/* Report type tabs */}
+            <div style={{display:"flex",gap:0,marginBottom:22,background:"#fff",borderRadius:10,padding:4,boxShadow:"0 2px 8px rgba(0,0,0,0.07)",width:"fit-content"}}>
+              <button onClick={()=>setReportType("client")}
+                style={{padding:"9px 24px",borderRadius:8,border:"none",cursor:"pointer",fontSize:14,fontWeight:700,
+                  background:reportType==="client"?"linear-gradient(135deg,#0d1b2a,#1b4332)":"transparent",
+                  color:reportType==="client"?"#fff":"#718096"}}>
+                👤 Client Reports
+              </button>
+              <button onClick={()=>setReportType("vendor")}
+                style={{padding:"9px 24px",borderRadius:8,border:"none",cursor:"pointer",fontSize:14,fontWeight:700,
+                  background:reportType==="vendor"?"linear-gradient(135deg,#1a0533,#7c3aed)":"transparent",
+                  color:reportType==="vendor"?"#fff":"#718096"}}>
+                🏪 Vendor Reports
+              </button>
+            </div>
+
+            {/* ── CLIENT REPORTS ── */}
+            {reportType==="client"&&(
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:16}}>
+                  {clients.map(c=>{
+                    const cj=jobs.filter(j=>j.clientId===c.id&&j.date.startsWith(selMonth));
+                    const amt=cj.reduce((s,j)=>s+j.items.reduce((a,i)=>a+i.amount,0),0);
+                    const prev=cDues[c.id]||0;
+                    const paid=(payments||[]).filter(p=>p.contactId===c.id&&p.date.startsWith(selMonth)).reduce((s,p)=>s+p.amount,0);
+                    const balance=amt+prev-paid;
+                    return(
+                      <div key={c.id} style={{background:"#fff",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
+                        {/* Card header */}
+                        <div style={{background:"linear-gradient(135deg,#0d1b2a,#1b4332)",padding:"16px 18px",color:"#fff"}}>
+                          <div style={{fontWeight:800,fontSize:16}}>{c.name}</div>
+                          <div style={{fontSize:12,color:"#a7f3d0",marginTop:2}}>{c.phone||c.email||"No contact"}</div>
+                        </div>
+                        <div style={{padding:"16px 18px"}}>
+                          {/* Stats row */}
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                            <div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                              <div style={{fontSize:11,color:"#718096",fontWeight:600}}>JOBS</div>
+                              <div style={{fontSize:22,fontWeight:800,color:"#065f46"}}>{cj.length}</div>
+                            </div>
+                            <div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                              <div style={{fontSize:11,color:"#718096",fontWeight:600}}>BILLED</div>
+                              <div style={{fontSize:16,fontWeight:800,color:"#065f46"}}>{fmt(amt)}</div>
+                            </div>
+                          </div>
+                          {/* Job list */}
+                          {cj.length>0&&(
+                            <div style={{marginBottom:12}}>
+                              {cj.map(job=>{
+                                const jobTotal=job.items.reduce((s,i)=>s+i.amount,0);
+                                return(
+                                  <div key={job.id} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"8px 10px",background:"#f7fafc",borderRadius:7,marginBottom:5}}>
+                                    <div>
+                                      <div style={{fontSize:12,fontWeight:700,color:"#1a202c"}}>{job.date}</div>
+                                      {job.programme&&<div style={{fontSize:11,color:"#4a5568"}}>🎬 {job.programme}</div>}
+                                      {job.location&&<div style={{fontSize:11,color:"#718096"}}>📍 {job.location}</div>}
+                                      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4}}>
+                                        {job.items.map((item,i)=>{
+                                          const eq=MY_EQ.find(e=>e.id===item.equipmentId);
+                                          return <span key={i} style={{fontSize:10,background:"#e2e8f0",padding:"2px 6px",borderRadius:4,color:"#4a5568"}}>{item.customName||eq?.name} ×{item.qty}</span>;
+                                        })}
+                                      </div>
+                                    </div>
+                                    <span style={{fontWeight:800,color:"#065f46",fontSize:13,whiteSpace:"nowrap",marginLeft:8}}>{fmt(jobTotal)}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {cj.length===0&&<div style={{textAlign:"center",padding:"12px 0",color:"#a0aec0",fontSize:13,marginBottom:8}}>No jobs this month</div>}
+                          {/* Financial summary */}
+                          <div style={{borderTop:"1.5px solid #e2e8f0",paddingTop:10}}>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:5}}>
+                              <span style={{color:"#4a5568"}}>This month</span>
+                              <span style={{fontWeight:600}}>{fmt(amt)}</span>
+                            </div>
+                            {prev>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:5}}>
+                              <span style={{color:"#c05621"}}>⏳ Prev due</span>
+                              <span style={{fontWeight:600,color:"#c05621"}}>{fmt(prev)}</span>
+                            </div>}
+                            {paid>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:5}}>
+                              <span style={{color:"#065f46"}}>✅ Received</span>
+                              <span style={{fontWeight:600,color:"#065f46"}}>− {fmt(paid)}</span>
+                            </div>}
+                            <div style={{display:"flex",justifyContent:"space-between",padding:"8px 10px",background:balance<=0?"#f0fdf4":"#fff5f5",borderRadius:8,marginTop:6}}>
+                              <span style={{fontSize:14,fontWeight:700,color:balance<=0?"#065f46":"#c53030"}}>Balance</span>
+                              <span style={{fontSize:16,fontWeight:800,color:balance<=0?"#065f46":"#c53030",fontFamily:"Georgia,serif"}}>{balance<=0?"✅ Cleared":fmt(balance)}</span>
+                            </div>
+                          </div>
+                          {/* Download PDF */}
+                          <button onClick={()=>generatePDF(c,jobs.filter(j=>j.clientId===c.id&&j.date.startsWith(selMonth)),prev,paid,balance,selMonth)}
+                            style={{width:"100%",padding:"9px",background:"linear-gradient(135deg,#0d1b2a,#1b4332)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700,marginTop:12}}>
+                            ⬇️ Download Client PDF
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {clients.length===0&&<div style={{background:"#fff",borderRadius:12,padding:50,textAlign:"center",color:"#a0aec0",fontSize:14,gridColumn:"1/-1"}}>No clients yet. Add clients in Contacts tab.</div>}
+                </div>
+              </div>
+            )}
+
+            {/* ── VENDOR REPORTS ── */}
+            {reportType==="vendor"&&(
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
+                  {vendors.map(v=>{
+                    const vh=hires.filter(h=>h.vendorId===v.id&&h.date.startsWith(selMonth));
+                    const totalAmt=vh.reduce((s,h)=>s+h.items.reduce((a,i)=>a+i.amount,0),0);
+                    const prev=vDues[v.id]||0;
+                    const advList=(advances||[]).filter(a=>a.contactId===v.id&&a.date.startsWith(selMonth));
+                    const totalAdv=advList.reduce((s,a)=>s+a.amount,0);
+                    const balance=totalAmt+prev-totalAdv;
+                    // Count days per item
+                    const itemDays={};
+                    vh.forEach(h=>h.items.forEach(it=>{
+                      const eq=VEN_EQ.find(e=>e.id===it.equipmentId);
+                      const nm=it.customName||eq?.name||it.equipmentId;
+                      itemDays[nm]=(itemDays[nm]||0)+it.qty;
+                    }));
+                    return(
+                      <div key={v.id} style={{background:"#fff",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.07)"}}>
+                        {/* Header */}
+                        <div style={{background:"linear-gradient(135deg,#1a0533,#7c3aed)",padding:"16px 18px",color:"#fff"}}>
+                          <div style={{fontWeight:800,fontSize:16}}>{v.name}</div>
+                          <div style={{fontSize:12,color:"#ddd6fe",marginTop:2}}>{v.phone||v.email||"No contact"}</div>
+                        </div>
+                        <div style={{padding:"16px 18px"}}>
+                          {/* Work summary */}
+                          {Object.keys(itemDays).length>0?(
+                            <div style={{marginBottom:14}}>
+                              <div style={{fontSize:12,fontWeight:700,color:"#4a5568",marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Days Worked This Month</div>
+                              {Object.entries(itemDays).map(([nm,days])=>(
+                                <div key={nm} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"#faf5ff",borderRadius:7,marginBottom:5,border:"1px solid #e9d5ff"}}>
+                                  <span style={{fontSize:13,fontWeight:600,color:"#1a202c"}}>{nm}</span>
+                                  <span style={{fontSize:13,fontWeight:800,color:"#7c3aed"}}>{days} day{days>1?"s":""}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ):(
+                            <div style={{textAlign:"center",padding:"12px 0",color:"#a0aec0",fontSize:13,marginBottom:8}}>No hires this month</div>
+                          )}
+
+                          {/* Hire entries detail */}
+                          {vh.length>0&&(
+                            <div style={{marginBottom:14}}>
+                              <div style={{fontSize:12,fontWeight:700,color:"#4a5568",marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Hire Details</div>
+                              {vh.map(hire=>{
+                                const hAmt=hire.items.reduce((s,i)=>s+i.amount,0);
+                                return(
+                                  <div key={hire.id} style={{padding:"8px 10px",background:"#f7fafc",borderRadius:7,marginBottom:5,borderLeft:"3px solid #7c3aed"}}>
+                                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                                      <span style={{fontSize:12,fontWeight:700,color:"#1a202c"}}>{hire.date}</span>
+                                      <span style={{fontSize:12,fontWeight:800,color:"#7c3aed"}}>{fmt(hAmt)}</span>
+                                    </div>
+                                    {hire.programme&&<div style={{fontSize:11,color:"#4a5568",marginTop:2}}>🎬 {hire.programme}</div>}
+                                    {hire.location&&<div style={{fontSize:11,color:"#718096"}}>📍 {hire.location}</div>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Advances */}
+                          {advList.length>0&&(
+                            <div style={{marginBottom:14}}>
+                              <div style={{fontSize:12,fontWeight:700,color:"#c05621",marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>💸 Advances Given</div>
+                              {advList.map(a=>(
+                                <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"#fffbeb",borderRadius:7,marginBottom:5,border:"1px solid #fde68a"}}>
+                                  <div>
+                                    <div style={{fontSize:12,fontWeight:700,color:"#92400e"}}>{a.date}</div>
+                                    {a.note&&<div style={{fontSize:11,color:"#c05621"}}>{a.note}</div>}
+                                  </div>
+                                  <span style={{fontSize:13,fontWeight:800,color:"#c05621"}}>{fmt(a.amount)}</span>
+                                </div>
+                              ))}
+                              <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",background:"#fef3c7",borderRadius:6,marginTop:4}}>
+                                <span style={{fontSize:12,fontWeight:600,color:"#92400e"}}>Total Advanced</span>
+                                <span style={{fontSize:13,fontWeight:800,color:"#c05621"}}>{fmt(totalAdv)}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Financial summary */}
+                          <div style={{borderTop:"1.5px solid #e2e8f0",paddingTop:10}}>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:5}}>
+                              <span style={{color:"#4a5568"}}>This month</span>
+                              <span style={{fontWeight:600}}>{fmt(totalAmt)}</span>
+                            </div>
+                            {prev>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:5}}>
+                              <span style={{color:"#c05621"}}>⏳ Prev due</span>
+                              <span style={{fontWeight:600,color:"#c05621"}}>{fmt(prev)}</span>
+                            </div>}
+                            {totalAdv>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:5}}>
+                              <span style={{color:"#065f46"}}>💸 Advances</span>
+                              <span style={{fontWeight:600,color:"#065f46"}}>− {fmt(totalAdv)}</span>
+                            </div>}
+                            <div style={{display:"flex",justifyContent:"space-between",padding:"8px 10px",background:balance<=0?"#f0fdf4":"#faf5ff",borderRadius:8,marginTop:6}}>
+                              <span style={{fontSize:14,fontWeight:700,color:balance<=0?"#065f46":"#7c3aed"}}>I Still Owe</span>
+                              <span style={{fontSize:16,fontWeight:800,color:balance<=0?"#065f46":"#7c3aed",fontFamily:"Georgia,serif"}}>{balance<=0?"✅ Settled":fmt(balance)}</span>
+                            </div>
+                          </div>
+
+                          {/* Download PDF */}
+                          <button onClick={()=>generateVendorReportPDF(v,vh,advList,prev,totalAdv,balance,selMonth)}
+                            style={{width:"100%",padding:"9px",background:"linear-gradient(135deg,#1a0533,#7c3aed)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700,marginTop:12}}>
+                            ⬇️ Download Vendor PDF
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {vendors.length===0&&<div style={{background:"#fff",borderRadius:12,padding:50,textAlign:"center",color:"#a0aec0",fontSize:14,gridColumn:"1/-1"}}>No vendors yet. Add vendors in Contacts tab.</div>}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
