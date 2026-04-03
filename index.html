@@ -849,13 +849,44 @@ function App(){
       setHires(hi); setCDues(cd); setVDues(vd);
       setPayments(py); setAdvances(av);
       setCloudStatus("synced"); setDataLoaded(true);
+      // Check for new staff entries after initial load
+      const staffJobs=jo.filter(j=>j.addedBy==="member");
+      if(staffJobs.length>lastSeenJobs){
+        setNewStaffCount(staffJobs.length-lastSeenJobs);
+        setShowStaffBanner(true);
+      }
     }).catch(()=>{ setCloudStatus("error"); setDataLoaded(true); });
+
+    // Real-time subscription — detect new staff entries
+    if(typeof supabase !== "undefined"){
+      const channel = supabase
+        .channel("jobs-changes")
+        .on("postgres_changes", {event:"UPDATE", schema:"public", table:"ll_data", filter:"key=eq.jobs"},
+          async (payload)=>{
+            try{
+              const newJobs = JSON.parse(payload.new.value);
+              setJobs(newJobs);
+              saveLocal("ll_jobs", newJobs);
+              const staffJobs = newJobs.filter(j=>j.addedBy==="member");
+              const stored = Number(localStorage.getItem("ll_lastSeenJobs")||0);
+              if(staffJobs.length > stored){
+                setNewStaffCount(staffJobs.length - stored);
+                setShowStaffBanner(true);
+              }
+            }catch(e){console.error("Realtime parse error:",e);}
+          }
+        ).subscribe();
+      return ()=>supabase.removeChannel(channel);
+    }
   },[]);
   const [selMonth,setSelMonth]   = useState(curMonth);
   const [modal,setModal]         = useState(null); // {type,entry?}
   const [billModal,setBillModal] = useState(null); // {type,contact}
   const [toast,setToast]         = useState(null);
   const [reportType,setReportType] = useState("client");
+  const [lastSeenJobs,setLastSeenJobs] = useState(()=>{ try{return Number(localStorage.getItem("ll_lastSeenJobs")||0);}catch{return 0;} });
+  const [newStaffCount,setNewStaffCount] = useState(0);
+  const [showStaffBanner,setShowStaffBanner] = useState(false);
   const [newC,setNewC]           = useState({name:"",email:"",phone:""});
   const [newV,setNewV]           = useState({name:"",email:"",phone:""});
 
@@ -926,6 +957,7 @@ function App(){
             <span style={{fontSize:12,color:"#4a5568"}}>📅 {fmtD(entry.date)}</span>
             {entry.programme&&<span style={{fontSize:12,fontWeight:600,color:"#1a202c"}}>🎬 {entry.programme}</span>}
             {entry.location&&<span style={{fontSize:12,color:"#718096"}}>📍 {entry.location}</span>}
+            {entry.addedBy==="member"&&<span style={{fontSize:11,background:"#fef3c7",color:"#c05621",border:"1px solid #f6ad55",borderRadius:5,padding:"2px 7px",fontWeight:700}}>👤 Staff</span>}
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <span style={{fontSize:16,fontWeight:800,color:accent,fontFamily:"Georgia,serif"}}>{fmt(total)}</span>
@@ -955,8 +987,20 @@ function App(){
           <div style={{fontSize:10,color:"#4a5568",letterSpacing:"2px",textTransform:"uppercase",marginTop:4}}>Equipment Rental Manager</div>
         </div>
         {[["dashboard","📊","Dashboard"],["income","💰","Income (Clients)"],["expense","💸","Expense (Vendors)"],["reports","📑","Monthly Reports"],["contacts","👥","Contacts"]].map(([k,ic,lb])=>(
-          <button key={k} onClick={()=>setView(k)} style={{display:"block",width:"100%",textAlign:"left",padding:"11px 14px",marginBottom:4,background:view===k?"rgba(255,255,255,0.13)":"transparent",border:view===k?"1px solid rgba(196,181,253,0.3)":"1px solid transparent",borderRadius:10,color:view===k?"#c4b5fd":"#718096",cursor:"pointer",fontSize:14,fontWeight:view===k?"700":"400"}}>
-            {ic} {lb}
+          <button key={k} onClick={()=>{
+            setView(k);
+            if(k==="income"&&newStaffCount>0){
+              const total=jobs.filter(j=>j.addedBy==="member").length;
+              localStorage.setItem("ll_lastSeenJobs",String(total));
+              setLastSeenJobs(total);
+              setNewStaffCount(0);
+              setShowStaffBanner(false);
+            }
+          }} style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",textAlign:"left",padding:"11px 14px",marginBottom:4,background:view===k?"rgba(255,255,255,0.13)":"transparent",border:view===k?"1px solid rgba(196,181,253,0.3)":"1px solid transparent",borderRadius:10,color:view===k?"#c4b5fd":"#718096",cursor:"pointer",fontSize:14,fontWeight:view===k?"700":"400"}}>
+            <span>{ic} {lb}</span>
+            {k==="income"&&newStaffCount>0&&(
+              <span style={{background:"#ef4444",color:"#fff",borderRadius:"50%",width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{newStaffCount}</span>
+            )}
           </button>
         ))}
         <div style={{marginTop:"auto",paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.07)",display:"flex",flexDirection:"column",gap:8}}>
@@ -990,6 +1034,39 @@ function App(){
 
       {/* Main Content */}
       <div className="main-content" style={{marginLeft:230,padding:"28px 28px 40px"}}>
+
+        {/* Staff notification banner */}
+        {showStaffBanner&&newStaffCount>0&&(
+          <div style={{background:"linear-gradient(135deg,#065f46,#1b4332)",borderRadius:12,padding:"14px 20px",marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 4px 16px rgba(6,95,70,0.3)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{background:"#ef4444",color:"#fff",borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,flexShrink:0}}>
+                {newStaffCount}
+              </div>
+              <div>
+                <div style={{color:"#fff",fontWeight:700,fontSize:15}}>
+                  🔔 {newStaffCount} new job entr{newStaffCount>1?"ies":"y"} from your staff!
+                </div>
+                <div style={{color:"#6ee7b7",fontSize:12,marginTop:2}}>Go to Income tab to review</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{
+                setView("income");
+                const total=jobs.filter(j=>j.addedBy==="member").length;
+                localStorage.setItem("ll_lastSeenJobs",String(total));
+                setLastSeenJobs(total);
+                setNewStaffCount(0);
+                setShowStaffBanner(false);
+              }} style={{padding:"7px 16px",background:"#6ee7b7",color:"#065f46",border:"none",borderRadius:7,cursor:"pointer",fontSize:13,fontWeight:800}}>
+                View Now
+              </button>
+              <button onClick={()=>setShowStaffBanner(false)}
+                style={{padding:"7px 12px",background:"rgba(255,255,255,0.15)",color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontSize:13}}>
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         <Toast t={toast}/>
 
         {/* ── DASHBOARD ── */}
