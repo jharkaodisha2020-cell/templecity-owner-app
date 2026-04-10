@@ -927,7 +927,15 @@ function App(){
 
   function delEntry(type,id){
     if(!window.confirm("Delete this entry?"))return;
-    type==="income"?setJobs(p=>p.filter(j=>j.id!==id)):setHires(p=>p.filter(h=>h.id!==id));
+    if(type==="income"){
+      const updated=jobs.filter(j=>j.id!==id);
+      setJobs(updated);
+      cloudSave("jobs",updated);
+    } else {
+      const updated=hires.filter(h=>h.id!==id);
+      setHires(updated);
+      cloudSave("hires",updated);
+    }
     showToast("Deleted");
   }
 
@@ -1500,7 +1508,7 @@ function App(){
                         <div style={{fontWeight:600,fontSize:13,color:"#1a202c"}}>{c.name}</div>
                         <div style={{fontSize:11,color:"#718096"}}>{c.email||"—"}{c.phone&&` · ${c.phone}`}</div>
                       </div>
-                      <button onClick={()=>{if(window.confirm("Remove?"))setClients(p=>p.filter(x=>x.id!==c.id));}} style={{padding:"4px 10px",background:"#fff5f5",color:"#c53030",border:"1px solid #fed7d7",borderRadius:5,cursor:"pointer",fontSize:11}}>✕</button>
+                      <button onClick={()=>{if(window.confirm("Remove?")){const u=clients.filter(x=>x.id!==c.id);setClients(u);cloudSave("clients",u);}}} style={{padding:"4px 10px",background:"#fff5f5",color:"#c53030",border:"1px solid #fed7d7",borderRadius:5,cursor:"pointer",fontSize:11}}>✕</button>
                     </div>
                   ))}
                 </div>
@@ -1525,7 +1533,7 @@ function App(){
                         <div style={{fontWeight:600,fontSize:13,color:"#1a202c"}}>{v.name}</div>
                         <div style={{fontSize:11,color:"#718096"}}>{v.email||"—"}{v.phone&&` · ${v.phone}`}</div>
                       </div>
-                      <button onClick={()=>{if(window.confirm("Remove?"))setVendors(p=>p.filter(x=>x.id!==v.id));}} style={{padding:"4px 10px",background:"#fff5f5",color:"#c53030",border:"1px solid #fed7d7",borderRadius:5,cursor:"pointer",fontSize:11}}>✕</button>
+                      <button onClick={()=>{if(window.confirm("Remove?")){const u=vendors.filter(x=>x.id!==v.id);setVendors(u);cloudSave("vendors",u);}}} style={{padding:"4px 10px",background:"#fff5f5",color:"#c53030",border:"1px solid #fed7d7",borderRadius:5,cursor:"pointer",fontSize:11}}>✕</button>
                     </div>
                   ))}
                 </div>
