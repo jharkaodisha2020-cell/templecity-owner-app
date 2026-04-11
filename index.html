@@ -246,37 +246,69 @@ function ItemsTable({items,eqList,accent,editable,onUpdate,onRemove}){
 }
 
 // ── Entry Form Modal ──────────────────────────────────────────────────────────
-function EntryModal({type,contacts,editEntry,onSave,onClose}){
+function EntryModal({type,contacts,editEntry,onSave,onClose,vendors}){
   const isIncome=type==="income";
   const eqList=isIncome?MY_EQ:VEN_EQ;
   const accent=isIncome?"green":"purple";
-  const [entry,setEntry]=useState(editEntry?JSON.parse(JSON.stringify(editEntry)):{
-    id:genId(),
-    [isIncome?"clientId":"vendorId"]:"",
-    date:todayStr(),programme:"",location:"",items:[],notes:""
-  });
-  const contactKey=isIncome?"clientId":"vendorId";
-  const canSave=entry[contactKey]&&entry.items.length>0;
   const IS={padding:"9px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,outline:"none",color:"#1a202c",background:"#fff",width:"100%"};
+  const contactKey=isIncome?"clientId":"vendorId";
 
-  function addItem(item){
-    const exists=entry.items.findIndex(i=>i.equipmentId===item.equipmentId);
+  const [entry,setEntry]=useState(editEntry?JSON.parse(JSON.stringify(editEntry)):{
+    id:genId(),[contactKey]:"",date:todayStr(),programme:"",location:"",items:[],notes:""
+  });
+
+  // Add equipment row state
+  const [selEqId,setSelEqId]=useState("");
+  const [selQty,setSelQty]=useState(1);
+  const [selRate,setSelRate]=useState("");
+  const [selSource,setSelSource]=useState("inhouse"); // inhouse | hire
+  const [selVendorId,setSelVendorId]=useState("");
+  const [customName,setCustomName]=useState("");
+  const isOther=selEqId==="__other__";
+
+  function onEqChange(id){
+    setSelEqId(id);
+    if(id!=="__other__"){const eq=eqList.find(e=>e.id===id);if(eq?.rate)setSelRate(String(eq.rate));}
+    else setSelRate("");
+    setCustomName("");setSelSource("inhouse");setSelVendorId("");
+  }
+
+  function addItem(){
+    if(!selEqId||(isOther&&!customName.trim())||!selRate)return;
+    if(isIncome&&selSource==="hire"&&!selVendorId)return;
+    const eq=eqList.find(e=>e.id===selEqId);
+    const qty=Number(selQty)||1,rate=Number(selRate)||0;
+    const nm=isOther?customName.trim():(eq?.name||selEqId);
+    const eid=isOther?"__other__:"+nm:selEqId;
+    const item={
+      equipmentId:eid,qty,rate,amount:qty*rate,
+      customName:isOther?nm:undefined,
+      source:isIncome?selSource:"hire",
+      vendorId:isIncome&&selSource==="hire"?selVendorId:undefined,
+    };
+    const exists=entry.items.findIndex(i=>i.equipmentId===eid);
     const newItems=exists>=0
-      ?entry.items.map((it,i)=>i===exists?{...it,qty:it.qty+item.qty,amount:(it.qty+item.qty)*it.rate}:it)
+      ?entry.items.map((it,i)=>i===exists?{...it,qty:it.qty+qty,amount:(it.qty+qty)*it.rate}:it)
       :[...entry.items,item];
     setEntry(p=>({...p,items:newItems}));
+    setSelEqId("");setSelQty(1);setSelRate("");setSelSource("inhouse");setSelVendorId("");setCustomName("");
   }
+
   function updateItem(idx,field,val){
     setEntry(p=>({...p,items:p.items.map((it,i)=>{if(i!==idx)return it;const n={...it,[field]:Number(val)||0};n.amount=n.qty*n.rate;return n;})}));
   }
-  function removeItem(idx){setEntry(p=>({...p,items:p.items.filter((_,i)=>i!==idx)}));}
 
+  const hireItems=entry.items.filter(it=>it.source==="hire"&&it.vendorId);
+  const hireVendors=[...new Set(hireItems.map(it=>it.vendorId))];
+  const canSave=entry[contactKey]&&entry.items.length>0;
+  const canAdd=selEqId&&selRate&&(!isOther||customName.trim())&&(!isIncome||selSource==="inhouse"||(selSource==="hire"&&selVendorId));
   const headerBg=isIncome?"linear-gradient(135deg,#0d1b2a,#1b4332)":"linear-gradient(135deg,#1a0533,#7c3aed)";
   const headerSub=isIncome?"#6ee7b7":"#c4b5fd";
+  const cats=[...new Set(eqList.map(e=>e.cat))];
 
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:700,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:12,overflowY:"auto"}}>
-      <div className="modal-inner" style={{background:"#fff",borderRadius:14,width:"100%",maxWidth:680,boxShadow:"0 25px 60px rgba(0,0,0,0.35)",margin:"16px auto 60px"}}>
+      <div className="modal-inner" style={{background:"#fff",borderRadius:14,width:"100%",maxWidth:700,boxShadow:"0 25px 60px rgba(0,0,0,0.35)",margin:"16px auto 60px"}}>
         <div style={{background:headerBg,padding:"18px 22px",borderRadius:"14px 14px 0 0",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
             <div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:700}}>{editEntry?"Edit":(isIncome?"New Client Job":"New Vendor Hire")}</div>
@@ -285,6 +317,7 @@ function EntryModal({type,contacts,editEntry,onSave,onClose}){
           <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:18}}>×</button>
         </div>
         <div style={{padding:"18px 20px"}}>
+          {/* Client/Vendor selector */}
           <div style={{marginBottom:12}}>
             <label style={{fontSize:11,fontWeight:700,color:"#4a5568",display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:1}}>{isIncome?"Client *":"Vendor *"}</label>
             <select value={entry[contactKey]} onChange={e=>setEntry(p=>({...p,[contactKey]:e.target.value}))} style={IS}>
@@ -292,7 +325,8 @@ function EntryModal({type,contacts,editEntry,onSave,onClose}){
               {contacts.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div className="form-grid-3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+          {/* Date / Programme / Location */}
+          <div className="form-grid-3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
             {[["date","Date","date"],["programme","Programme","text"],["location","Location","text"]].map(([k,ph,t])=>(
               <div key={k}>
                 <label style={{fontSize:11,fontWeight:700,color:"#4a5568",display:"block",marginBottom:4,textTransform:"uppercase"}}>{ph}</label>
@@ -300,14 +334,165 @@ function EntryModal({type,contacts,editEntry,onSave,onClose}){
               </div>
             ))}
           </div>
-          <AddEqRow eqList={eqList} accentColor={accent} onAdd={addItem}/>
-          <ItemsTable items={entry.items} eqList={eqList} accent={accent} editable={true} onUpdate={updateItem} onRemove={removeItem}/>
+
+          {/* Add Equipment with Hire/Inhouse */}
+          <div style={{background:isIncome?"#f0fdf4":"#faf5ff",border:`1.5px solid ${isIncome?"#bbf7d0":"#e9d5ff"}`,borderRadius:10,padding:14,marginBottom:14}}>
+            <div style={{fontSize:13,fontWeight:700,color:isIncome?"#065f46":"#7c3aed",marginBottom:10}}>➕ Add Equipment</div>
+
+            {/* Equipment select */}
+            <div style={{marginBottom:10}}>
+              <label style={{fontSize:11,fontWeight:600,color:"#718096",display:"block",marginBottom:4,textTransform:"uppercase"}}>Equipment</label>
+              <select value={selEqId} onChange={e=>onEqChange(e.target.value)} style={IS}>
+                <option value="">— Select Equipment —</option>
+                {cats.map(cat=>(
+                  <optgroup key={cat} label={cat}>
+                    {eqList.filter(e=>e.cat===cat).map(e=><option key={e.id} value={e.id}>{e.name}{e.rate?` — ${fmt(e.rate)}/day`:""}</option>)}
+                  </optgroup>
+                ))}
+                <optgroup label="──────────────">
+                  <option value="__other__">✏️ Other (Custom Item)</option>
+                </optgroup>
+              </select>
+              {isOther&&<input placeholder="Type item name" value={customName} onChange={e=>setCustomName(e.target.value)} style={{...IS,marginTop:8,border:`1.5px solid ${isIncome?"#065f46":"#7c3aed"}`}}/>}
+            </div>
+
+            {/* Hire / Inhouse toggle — only for income/client job */}
+            {isIncome&&selEqId&&(
+              <div style={{marginBottom:10}}>
+                <label style={{fontSize:11,fontWeight:600,color:"#718096",display:"block",marginBottom:6,textTransform:"uppercase"}}>Source</label>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>{setSelSource("inhouse");setSelVendorId("");}}
+                    style={{flex:1,padding:"9px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:700,
+                      background:selSource==="inhouse"?"#065f46":"#e2e8f0",
+                      color:selSource==="inhouse"?"#fff":"#4a5568"}}>
+                    🏠 Inhouse (Own Equipment)
+                  </button>
+                  <button onClick={()=>setSelSource("hire")}
+                    style={{flex:1,padding:"9px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:700,
+                      background:selSource==="hire"?"#7c3aed":"#e2e8f0",
+                      color:selSource==="hire"?"#fff":"#4a5568"}}>
+                    🤝 Hire (From Vendor)
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Vendor selector — shown when hire selected */}
+            {isIncome&&selSource==="hire"&&(
+              <div style={{marginBottom:10,padding:"10px 12px",background:"#faf5ff",borderRadius:8,border:"1.5px solid #e9d5ff"}}>
+                <label style={{fontSize:11,fontWeight:700,color:"#7c3aed",display:"block",marginBottom:6,textTransform:"uppercase"}}>Select Vendor *</label>
+                <select value={selVendorId} onChange={e=>setSelVendorId(e.target.value)} style={{...IS,border:"1.5px solid #7c3aed"}}>
+                  <option value="">— Choose vendor who supplies this —</option>
+                  {vendors.map(v=><option key={v.id} value={v.id}>{v.name}{v.phone?` · ${v.phone}`:""}</option>)}
+                </select>
+                {selVendorId&&<div style={{fontSize:12,color:"#7c3aed",marginTop:6,fontWeight:600}}>
+                  ✅ Expense will auto-added to {vendors.find(v=>v.id===selVendorId)?.name}'s account
+                </div>}
+              </div>
+            )}
+
+            {/* Qty and Rate */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:8,alignItems:"flex-end"}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,color:"#718096",display:"block",marginBottom:4,textTransform:"uppercase"}}>Qty</label>
+                <input type="number" min="1" value={selQty} onChange={e=>setSelQty(e.target.value)} style={{...IS,textAlign:"center"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,color:"#718096",display:"block",marginBottom:4,textTransform:"uppercase"}}>Rate / Day ₹</label>
+                <input type="number" value={selRate} onChange={e=>setSelRate(e.target.value)} placeholder="Rate" style={{...IS,textAlign:"right"}}/>
+              </div>
+              <button onClick={addItem} disabled={!canAdd}
+                style={{padding:"9px 18px",background:canAdd?(isIncome?"#065f46":"#7c3aed"):"#a0aec0",color:"#fff",border:"none",
+                  borderRadius:8,cursor:canAdd?"pointer":"not-allowed",fontWeight:700,fontSize:13,height:40}}>
+                Add
+              </button>
+            </div>
+            {canAdd&&selRate&&<div style={{marginTop:8,fontSize:12,fontWeight:600,color:isIncome?"#065f46":"#7c3aed"}}>
+              {selQty} × {fmt(Number(selRate))} = {fmt(Number(selQty)*Number(selRate))}
+              {isIncome&&selSource==="hire"&&selVendorId&&<span style={{color:"#7c3aed",marginLeft:8}}>· Hire from {vendors.find(v=>v.id===selVendorId)?.name}</span>}
+            </div>}
+          </div>
+
+          {/* Items Table */}
+          {entry.items.length>0&&(
+            <div style={{border:"1.5px solid #e2e8f0",borderRadius:10,overflow:"hidden",marginBottom:14}}>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{background:"#f7fafc",borderBottom:"1px solid #e2e8f0"}}>
+                  {["Equipment","Source","Qty","Rate","Amount",""].map((h,i)=>(
+                    <th key={i} style={{padding:"8px 10px",fontSize:11,textTransform:"uppercase",letterSpacing:1,color:"#718096",textAlign:i>=2&&i<=4?"right":"left"}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {entry.items.map((item,idx)=>{
+                    const eq=eqList.find(e=>e.id===item.equipmentId);
+                    const nm=item.customName||eq?.name||item.equipmentId;
+                    const vnd=item.vendorId?vendors.find(v=>v.id===item.vendorId):null;
+                    return(
+                      <tr key={idx} style={{borderBottom:"1px solid #f7fafc"}}>
+                        <td style={{padding:"8px 10px",fontSize:13,fontWeight:600,color:"#1a202c"}}>{nm}</td>
+                        <td style={{padding:"8px 10px"}}>
+                          {isIncome?(
+                            item.source==="hire"
+                              ?<span style={{fontSize:11,background:"#faf5ff",color:"#7c3aed",border:"1px solid #e9d5ff",borderRadius:4,padding:"2px 7px",fontWeight:700}}>
+                                🤝 {vnd?.name||"Hire"}
+                              </span>
+                              :<span style={{fontSize:11,background:"#f0fdf4",color:"#065f46",border:"1px solid #bbf7d0",borderRadius:4,padding:"2px 7px",fontWeight:700}}>
+                                🏠 Inhouse
+                              </span>
+                          ):<span style={{fontSize:11,color:"#718096"}}>—</span>}
+                        </td>
+                        <td style={{padding:"8px 10px",textAlign:"right"}}>
+                          <input type="number" min="1" value={item.qty} onChange={e=>updateItem(idx,"qty",e.target.value)}
+                            style={{width:45,padding:"3px 6px",border:"1.5px solid #e2e8f0",borderRadius:5,fontSize:12,textAlign:"center",outline:"none"}}/>
+                        </td>
+                        <td style={{padding:"8px 10px",textAlign:"right"}}>
+                          <input type="number" value={item.rate} onChange={e=>updateItem(idx,"rate",e.target.value)}
+                            style={{width:80,padding:"3px 6px",border:"1.5px solid #e2e8f0",borderRadius:5,fontSize:12,textAlign:"right",outline:"none"}}/>
+                        </td>
+                        <td style={{padding:"8px 10px",textAlign:"right",fontSize:13,fontWeight:700,color:isIncome?"#065f46":"#7c3aed"}}>{fmt(item.amount)}</td>
+                        <td style={{padding:"8px 10px",textAlign:"center"}}>
+                          <button onClick={()=>setEntry(p=>({...p,items:p.items.filter((_,i)=>i!==idx)}))}
+                            style={{background:"#fff5f5",color:"#c53030",border:"1px solid #fed7d7",borderRadius:4,cursor:"pointer",padding:"2px 7px",fontSize:11}}>✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"10px 14px",background:isIncome?"#f0fdf4":"#faf5ff",borderTop:`2px solid ${isIncome?"#bbf7d0":"#e9d5ff"}`}}>
+                <span style={{fontWeight:700,color:isIncome?"#065f46":"#7c3aed",fontSize:14}}>Total</span>
+                <span style={{fontWeight:800,fontSize:18,color:isIncome?"#065f46":"#7c3aed",fontFamily:"Georgia,serif"}}>{fmt(entry.items.reduce((s,i)=>s+i.amount,0))}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Auto vendor expense preview */}
+          {isIncome&&hireItems.length>0&&(
+            <div style={{background:"#faf5ff",border:"1.5px solid #e9d5ff",borderRadius:10,padding:14,marginBottom:14}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#7c3aed",marginBottom:10}}>🤝 Auto Vendor Expenses (will be created on save)</div>
+              {hireVendors.map(vid=>{
+                const v=vendors.find(x=>x.id===vid);
+                const vitems=hireItems.filter(it=>it.vendorId===vid);
+                const vtotal=vitems.reduce((s,i)=>s+i.amount,0);
+                return(
+                  <div key={vid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#fff",borderRadius:8,marginBottom:6,border:"1px solid #e9d5ff"}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:"#1a202c"}}>{v?.name||"Unknown Vendor"}</div>
+                      <div style={{fontSize:11,color:"#718096",marginTop:2}}>{vitems.map(i=>{const eq=eqList.find(e=>e.id===i.equipmentId);return(i.customName||eq?.name)+" ×"+i.qty;}).join(", ")}</div>
+                    </div>
+                    <span style={{fontWeight:800,color:"#7c3aed",fontSize:14}}>{fmt(vtotal)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <textarea value={entry.notes} onChange={e=>setEntry(p=>({...p,notes:e.target.value}))} placeholder="Notes…" rows={2} style={{...IS,resize:"vertical",marginBottom:14}}/>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <button onClick={onClose} style={{padding:"10px 18px",border:"2px solid #e2e8f0",borderRadius:8,background:"#fff",cursor:"pointer",fontSize:14,color:"#4a5568",fontWeight:500}}>Cancel</button>
             <button onClick={()=>canSave&&onSave(entry)} disabled={!canSave}
               style={{padding:"10px 24px",background:canSave?headerBg:"#a0aec0",color:"#fff",border:"none",borderRadius:8,cursor:canSave?"pointer":"not-allowed",fontSize:14,fontWeight:700}}>
-              {editEntry?"Update":"Save"}
+              {editEntry?"Update":`Save${hireItems.length>0?` + ${hireVendors.length} Vendor Expense${hireVendors.length>1?"s":""}`:""}`}
             </button>
           </div>
         </div>
@@ -1042,13 +1227,52 @@ function App(){
   function saveEntry(type,entry){
     if(type==="income"){
       const editing=modal.entry;
-      setJobs(p=>editing?p.map(j=>j.id===entry.id?entry:j):[...p,{...entry,id:genId()}]);
+      const newJob={...entry,id:editing?entry.id:genId()};
+      const updatedJobs=editing?jobs.map(j=>j.id===newJob.id?newJob:j):[...jobs,newJob];
+      setJobs(updatedJobs);
+      cloudSave("jobs",updatedJobs);
+
+      // Auto-create vendor hire entries for hired items
+      if(!editing){
+        const hireItems=entry.items.filter(it=>it.source==="hire"&&it.vendorId);
+        if(hireItems.length>0){
+          // Group by vendor
+          const byVendor={};
+          hireItems.forEach(it=>{
+            if(!byVendor[it.vendorId])byVendor[it.vendorId]=[];
+            byVendor[it.vendorId].push({...it,source:undefined,vendorId:undefined});
+          });
+          const newHires=[...hires];
+          Object.entries(byVendor).forEach(([vendorId,items])=>{
+            newHires.push({
+              id:genId(),
+              vendorId,
+              date:entry.date,
+              programme:entry.programme,
+              location:entry.location,
+              items,
+              notes:`Auto-created from client job: ${entry.programme||entry.date}`,
+              autoCreated:true,
+              sourceJobId:newJob.id,
+            });
+          });
+          setHires(newHires);
+          cloudSave("hires",newHires);
+          showToast(`Saved! + ${Object.keys(byVendor).length} vendor expense${Object.keys(byVendor).length>1?"s":""} auto-created ✅`);
+        } else {
+          showToast("Job saved!");
+        }
+      } else {
+        showToast("Job updated!");
+      }
     } else {
       const editing=modal.entry;
-      setHires(p=>editing?p.map(h=>h.id===entry.id?entry:h):[...p,{...entry,id:genId()}]);
+      const updatedHires=editing?hires.map(h=>h.id===entry.id?entry:h):[...hires,{...entry,id:genId()}];
+      setHires(updatedHires);
+      cloudSave("hires",updatedHires);
+      showToast(editing?"Updated!":"Saved!");
     }
     setModal(null);
-    showToast(modal.entry?"Updated!":"Saved!");
   }
 
   function delEntry(type,id){
@@ -1092,6 +1316,7 @@ function App(){
             {entry.programme&&<span style={{fontSize:12,fontWeight:600,color:"#1a202c"}}>🎬 {entry.programme}</span>}
             {entry.location&&<span style={{fontSize:12,color:"#718096"}}>📍 {entry.location}</span>}
             {entry.addedBy==="member"&&<span style={{fontSize:11,background:"#fef3c7",color:"#c05621",border:"1px solid #f6ad55",borderRadius:5,padding:"2px 7px",fontWeight:700}}>👤 Staff</span>}
+            {entry.autoCreated&&<span style={{fontSize:11,background:"#faf5ff",color:"#7c3aed",border:"1px solid #e9d5ff",borderRadius:5,padding:"2px 7px",fontWeight:700}}>🤝 Auto</span>}
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <span style={{fontSize:16,fontWeight:800,color:accent,fontFamily:"Georgia,serif"}}>{fmt(total)}</span>
@@ -1717,6 +1942,7 @@ function App(){
           editEntry={modal.entry||null}
           onSave={entry=>saveEntry(modal.type,entry)}
           onClose={()=>setModal(null)}
+          vendors={vendors}
         />
       )}
       {billModal&&(
