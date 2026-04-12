@@ -1232,38 +1232,43 @@ function App(){
       setJobs(updatedJobs);
       cloudSave("jobs",updatedJobs);
 
-      // Auto-create vendor hire entries for hired items
-      if(!editing){
-        const hireItems=entry.items.filter(it=>it.source==="hire"&&it.vendorId);
-        if(hireItems.length>0){
-          // Group by vendor
-          const byVendor={};
-          hireItems.forEach(it=>{
-            if(!byVendor[it.vendorId])byVendor[it.vendorId]=[];
-            byVendor[it.vendorId].push({...it,source:undefined,vendorId:undefined});
+      // ── Auto-create/update vendor hire entries for hired items ──
+      const hireItems=entry.items.filter(it=>it.source==="hire"&&it.vendorId);
+
+      // Group hired items by vendor
+      const byVendor={};
+      hireItems.forEach(it=>{
+        if(!byVendor[it.vendorId])byVendor[it.vendorId]=[];
+        byVendor[it.vendorId].push({...it,source:undefined,vendorId:undefined});
+      });
+
+      // Start with existing hires, remove any previously auto-created for this job
+      let updatedHires=hires.filter(h=>h.sourceJobId!==newJob.id);
+
+      // Add new auto hire entries for each vendor
+      if(Object.keys(byVendor).length>0){
+        Object.entries(byVendor).forEach(([vendorId,items])=>{
+          updatedHires.push({
+            id:genId(),
+            vendorId,
+            date:entry.date,
+            programme:entry.programme,
+            location:entry.location,
+            items,
+            notes:`Auto from job: ${entry.programme||entry.date}`,
+            autoCreated:true,
+            sourceJobId:newJob.id,
           });
-          const newHires=[...hires];
-          Object.entries(byVendor).forEach(([vendorId,items])=>{
-            newHires.push({
-              id:genId(),
-              vendorId,
-              date:entry.date,
-              programme:entry.programme,
-              location:entry.location,
-              items,
-              notes:`Auto-created from client job: ${entry.programme||entry.date}`,
-              autoCreated:true,
-              sourceJobId:newJob.id,
-            });
-          });
-          setHires(newHires);
-          cloudSave("hires",newHires);
-          showToast(`Saved! + ${Object.keys(byVendor).length} vendor expense${Object.keys(byVendor).length>1?"s":""} auto-created ✅`);
-        } else {
-          showToast("Job saved!");
-        }
+        });
+        setHires(updatedHires);
+        cloudSave("hires",updatedHires);
+        const action=editing?"Updated":"Saved";
+        showToast(`${action}! + ${Object.keys(byVendor).length} vendor expense${Object.keys(byVendor).length>1?"s":""} auto-created ✅`);
       } else {
-        showToast("Job updated!");
+        // No hire items — remove any old auto-created hires for this job
+        setHires(updatedHires);
+        cloudSave("hires",updatedHires);
+        showToast(editing?"Job updated!":"Job saved!");
       }
     } else {
       const editing=modal.entry;
