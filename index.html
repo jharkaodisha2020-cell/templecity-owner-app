@@ -86,7 +86,10 @@ const MY_EQ = [
   {id:"e9", name:"Drone",       rate:4000,  cat:"Drone"},
   {id:"e10",name:"Drone (WP)",  rate:2000,  cat:"Drone"},
   {id:"e11",name:"RF",          rate:1000,  cat:"Accessory"},
-  {id:"e12",name:"Live Stream", rate:4000,  cat:"Accessory"},
+  {id:"e12",name:"Live Stream",   rate:4000, cat:"Accessory"},
+  {id:"e13",name:"Canon R6 MK2",  rate:2500, cat:"Camera"},
+  {id:"e14",name:"Live OPT",      rate:2000, cat:"Accessory"},
+  {id:"e15",name:"Drone OPT",     rate:2000, cat:"Drone"},
 ];
 const VEN_EQ = [
   {id:"v1",name:"DOP",      cat:"Crew"},
@@ -1239,7 +1242,18 @@ function App(){
       const byVendor={};
       hireItems.forEach(it=>{
         if(!byVendor[it.vendorId])byVendor[it.vendorId]=[];
-        byVendor[it.vendorId].push({...it,source:undefined,vendorId:undefined});
+        // Look up name from MY_EQ so vendor side shows correct name
+        const myEq=MY_EQ.find(e=>e.id===it.equipmentId);
+        const itemName=it.customName||myEq?.name||it.equipmentId;
+        byVendor[it.vendorId].push({
+          ...it,
+          source:undefined,
+          vendorId:undefined,
+          // Always store customName so vendor side always shows correct name
+          customName:itemName,
+          // Use a generic vendor equipment id so it doesn't break
+          equipmentId:"__other__:"+itemName,
+        });
       });
 
       // Start with existing hires, remove any previously auto-created for this job
