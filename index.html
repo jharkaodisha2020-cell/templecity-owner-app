@@ -106,8 +106,34 @@ const fmt=n=>`₹${Number(n||0).toLocaleString("en-IN")}`;
 const fmtD=s=>{if(!s)return"";const d=new Date(s);return`${d.getDate()} ${MONTHS[d.getMonth()].slice(0,3)} ${d.getFullYear()}`;};
 const mLabel=m=>{const d=new Date(m+"-01");return`${MONTHS[d.getMonth()]} ${d.getFullYear()}`;};
 // ── localStorage helpers ─────────────────────────────────────────────────────
-const load=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}};
-const saveLocal=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
+const load=(k,d)=>{
+  try{
+    const v=localStorage.getItem(k);
+    if(v){
+      const parsed=JSON.parse(v);
+      // If data exists and has content, return it
+      if(parsed && (Array.isArray(parsed)?parsed.length>0:Object.keys(parsed).length>0)) return parsed;
+    }
+    // Try backup if main is empty
+    const backup=localStorage.getItem(k+"_backup");
+    if(backup){
+      const parsed=JSON.parse(backup);
+      if(parsed && (Array.isArray(parsed)?parsed.length>0:Object.keys(parsed).length>0)){
+        console.warn("Restored from backup:",k);
+        localStorage.setItem(k,backup); // restore main from backup
+        return parsed;
+      }
+    }
+    return d;
+  }catch{return d;}
+};
+const saveLocal=(k,v)=>{
+  try{
+    localStorage.setItem(k,JSON.stringify(v));
+    // Always keep backup in sync
+    localStorage.setItem(k+"_backup",JSON.stringify(v));
+  }catch{}
+};
 
 // ── Supabase init ─────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://dnpbuwldcxmrptildfpq.supabase.co";
@@ -118,6 +144,8 @@ const FIREBASE_READY = true; // reuse flag name for compatibility
 // ── Cloud save/load via Supabase ──────────────────────────────────────────────
 async function cloudSave(collection, data){
   saveLocal("ll_"+collection, data);
+  // Mark as own save so realtime ignores it
+  if(window._markOwnSave) window._markOwnSave();
   try{
     const { error } = await supabase.from("ll_data").upsert({
       key: collection,
@@ -128,15 +156,32 @@ async function cloudSave(collection, data){
   }catch(e){console.error("cloudSave:", e);}
 }
 async function cloudLoad(collection, def){
+  // ALWAYS load local first as immediate fallback
   const local = load("ll_"+collection, null);
   try{
-    const { data, error } = await supabase.from("ll_data").select("value").eq("key", collection).single();
-    if(error || !data) return local !== null ? local : def;
+    // Add 8 second timeout so slow network doesnt wipe data
+    const timeoutPromise = new Promise((_,reject)=>setTimeout(()=>reject(new Error("timeout")),8000));
+    const fetchPromise = supabase.from("ll_data").select("value").eq("key",collection).single();
+    const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+    if(error || !data){
+      console.warn("cloudLoad: no data for",collection,"- using local");
+      return local !== null ? local : def;
+    }
     const parsed = JSON.parse(data.value);
-    saveLocal("ll_"+collection, parsed);
+    // Only use cloud data if it has content OR local is empty
+    // Never replace existing local data with empty cloud data
+    if(parsed && (Array.isArray(parsed) ? parsed.length >= (local||[]).length : Object.keys(parsed).length >= Object.keys(local||{}).length)){
+      saveLocal("ll_"+collection, parsed);
+      return parsed;
+    }
+    // Cloud has less data than local - keep local and re-save to cloud
+    if(local !== null && local !== def){
+      console.warn("cloudLoad: local has more data than cloud for",collection,"- keeping local");
+      return local;
+    }
     return parsed;
   }catch(e){
-    console.error("cloudLoad:", e);
+    console.error("cloudLoad error for",collection,":",e.message,"- using local fallback");
     return local !== null ? local : def;
   }
 }
@@ -1145,8 +1190,13 @@ function App(){
 
   // Load from cloud on startup
   useEffect(()=>{
-    if(!FIREBASE_READY){ setDataLoaded(true); return; }
+    // Step 1: Immediately show local data so app works even if cloud is slow
+    setDataLoaded(true);
+
+    if(!FIREBASE_READY){ return; }
     setCloudStatus("syncing");
+
+    // Step 2: Load from cloud in background
     Promise.all([
       cloudLoad("clients",[]),
       cloudLoad("vendors",[]),
@@ -1158,33 +1208,53 @@ function App(){
       cloudLoad("advances",[]),
       cloudLoad("vendorPays",[]),
     ]).then(([cl,ve,jo,hi,cd,vd,py,av,vp])=>{
-      setClients(cl); setVendors(ve); setJobs(jo);
-      setHires(hi); setCDues(cd); setVDues(vd);
-      setPayments(py); setAdvances(av); setVendorPays(vp);
-      setCloudStatus("synced"); setDataLoaded(true);
-      // Check for new staff entries after initial load
+      // Only update state if cloud has data — never overwrite with empty
+      if(cl.length>0||load("ll_clients",[]).length===0) setClients(cl);
+      if(ve.length>0||load("ll_vendors",[]).length===0) setVendors(ve);
+      if(jo.length>0||load("ll_jobs",[]).length===0) setJobs(jo);
+      if(hi.length>0||load("ll_hires",[]).length===0) setHires(hi);
+      if(Object.keys(cd).length>0||Object.keys(load("ll_cDues",{})).length===0) setCDues(cd);
+      if(Object.keys(vd).length>0||Object.keys(load("ll_vDues",{})).length===0) setVDues(vd);
+      if(py.length>0||load("ll_payments",[]).length===0) setPayments(py);
+      if(av.length>0||load("ll_advances",[]).length===0) setAdvances(av);
+      if(vp.length>0||load("ll_vendorPays",[]).length===0) setVendorPays(vp);
+      setCloudStatus("synced");
+      // Check for new staff entries
       const staffJobs=jo.filter(j=>j.addedBy==="member");
       if(staffJobs.length>lastSeenJobs){
         setNewStaffCount(staffJobs.length-lastSeenJobs);
         setShowStaffBanner(true);
       }
-    }).catch(()=>{ setCloudStatus("error"); setDataLoaded(true); });
+    }).catch((e)=>{
+      console.error("Cloud load failed:",e);
+      setCloudStatus("error");
+      // Data already showing from local — no data loss!
+    });
 
-    // Real-time subscription — detect new staff entries
+    // Real-time subscription — only for staff entries (not own saves)
     if(typeof supabase !== "undefined"){
+      let lastSaveTime = 0;
+      window._markOwnSave = ()=>{ lastSaveTime = Date.now(); };
       const channel = supabase
         .channel("jobs-changes")
         .on("postgres_changes", {event:"UPDATE", schema:"public", table:"ll_data", filter:"key=eq.jobs"},
           async (payload)=>{
+            // Ignore if we just saved ourselves (within 3 seconds)
+            if(Date.now() - lastSaveTime < 3000) return;
             try{
               const newJobs = JSON.parse(payload.new.value);
-              setJobs(newJobs);
-              saveLocal("ll_jobs", newJobs);
+              const localJobs = load("ll_jobs",[]);
+              // Only update if staff added new entries
               const staffJobs = newJobs.filter(j=>j.addedBy==="member");
-              const stored = Number(localStorage.getItem("ll_lastSeenJobs")||0);
-              if(staffJobs.length > stored){
-                setNewStaffCount(staffJobs.length - stored);
-                setShowStaffBanner(true);
+              const localStaffJobs = localJobs.filter(j=>j.addedBy==="member");
+              if(staffJobs.length > localStaffJobs.length){
+                setJobs(newJobs);
+                saveLocal("ll_jobs", newJobs);
+                const stored = Number(localStorage.getItem("ll_lastSeenJobs")||0);
+                if(staffJobs.length > stored){
+                  setNewStaffCount(staffJobs.length - stored);
+                  setShowStaffBanner(true);
+                }
               }
             }catch(e){console.error("Realtime parse error:",e);}
           }
@@ -1204,26 +1274,22 @@ function App(){
   const [newV,setNewV]           = useState({name:"",email:"",phone:""});
   const [editContact,setEditContact] = useState(null); // {type,id,name,email,phone}
 
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("clients",clients); },[clients]);
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("vendors",vendors); },[vendors]);
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("jobs",jobs); },[jobs]);
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("hires",hires); },[hires]);
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("cDues",cDues); },[cDues]);
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("vDues",vDues); },[vDues]);
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("payments",payments); },[payments]);
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("advances",advances); },[advances]);
-  useEffect(()=>{ if(!dataLoaded)return; cloudSave("vendorPays",vendorPays); },[vendorPays]);
+  // No auto-save useEffects — saves happen directly in each action to avoid blink
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),2800);}
 
   function addContact(type){
     if(type==="client"){
       if(!newC.name.trim())return showToast("Name required","error");
-      setClients(p=>[...p,{...newC,id:genId()}]);
+      const newClientList=[...clients,{...newC,id:genId()}];
+      setClients(newClientList);
+      cloudSave("clients",newClientList);
       setNewC({name:"",email:"",phone:""});showToast("Client added!");
     } else {
       if(!newV.name.trim())return showToast("Name required","error");
-      setVendors(p=>[...p,{...newV,id:genId()}]);
+      const newVendorList=[...vendors,{...newV,id:genId()}];
+      setVendors(newVendorList);
+      cloudSave("vendors",newVendorList);
       setNewV({name:"",email:"",phone:""});showToast("Vendor added!");
     }
   }
@@ -2037,15 +2103,21 @@ function App(){
           contact={billModal.contact}
           entries={billModal.type==="income"?jobs:hires}
           prevDues={billModal.type==="income"?cDues:vDues}
-          onSavePrevDue={(id,amt)=>billModal.type==="income"?setCDues(p=>({...p,[id]:amt})):setVDues(p=>({...p,[id]:amt}))}
+          onSavePrevDue={(id,amt)=>{
+            if(billModal.type==="income"){
+              const u={...cDues,[id]:amt};setCDues(u);cloudSave("cDues",u);
+            } else {
+              const u={...vDues,[id]:amt};setVDues(u);cloudSave("vDues",u);
+            }
+          }}
           month={selMonth}
           onClose={()=>setBillModal(null)}
           payments={payments}
-          onAddPayment={p=>setPayments(prev=>[...prev,p])}
-          onDelPayment={id=>setPayments(prev=>prev.filter(p=>p.id!==id))}
+          onAddPayment={p=>{const u=[...payments,p];setPayments(u);cloudSave("payments",u);}}
+          onDelPayment={id=>{const u=payments.filter(p=>p.id!==id);setPayments(u);cloudSave("payments",u);}}
           advances={advances}
-          onAddAdvance={a=>setAdvances(prev=>[...prev,a])}
-          onDelAdvance={id=>setAdvances(prev=>prev.filter(a=>a.id!==id))}
+          onAddAdvance={a=>{const u=[...advances,a];setAdvances(u);cloudSave("advances",u);}}
+          onDelAdvance={id=>{const u=advances.filter(a=>a.id!==id);setAdvances(u);cloudSave("advances",u);}}
           vendorPays={vendorPays}
           onAddVendorPay={p=>{const u=[...vendorPays,p];setVendorPays(u);cloudSave("vendorPays",u);}}
           onDelVendorPay={id=>{const u=vendorPays.filter(p=>p.id!==id);setVendorPays(u);cloudSave("vendorPays",u);}}
@@ -2064,11 +2136,41 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 // ── Service Worker registration ───────────────────────────────────────────────
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
+    // Try external sw.js first (Netlify), fall back to inline blob
     navigator.serviceWorker.register('/sw.js')
       .then(reg => console.log('✅ SW registered'))
-      .catch(err => console.log('SW error:', err));
+      .catch(()=>{
+        // Fallback: inline service worker via blob URL
+        const swCode = `
+          const CACHE='templecity-v3';
+          self.addEventListener('install',e=>{self.skipWaiting();});
+          self.addEventListener('activate',e=>{self.clients.claim();});
+          self.addEventListener('fetch',e=>{
+            e.respondWith(
+              fetch(e.request).then(r=>{
+                const clone=r.clone();
+                caches.open(CACHE).then(c=>c.put(e.request,clone));
+                return r;
+              }).catch(()=>caches.match(e.request))
+            );
+          });
+        `;
+        const blob = new Blob([swCode], {type:'application/javascript'});
+        navigator.serviceWorker.register(URL.createObjectURL(blob))
+          .then(()=>console.log('✅ SW registered (inline)'))
+          .catch(()=>console.log('SW not supported here'));
+      });
   });
 }
+
+// Emergency backup — save to localStorage backup before page closes
+window.addEventListener("beforeunload", ()=>{
+  const keys=["ll_clients","ll_vendors","ll_jobs","ll_hires","ll_cDues","ll_vDues","ll_payments","ll_advances","ll_vendorPays"];
+  keys.forEach(k=>{
+    const v=localStorage.getItem(k);
+    if(v) localStorage.setItem(k+"_backup", v);
+  });
+});
 
 // ── PWA Install Prompt ────────────────────────────────────────────────────────
 let deferredPrompt;
