@@ -17,7 +17,7 @@
 
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -56,7 +56,40 @@
   </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root">
+  <div id="loading-screen" style="min-height:100vh;background:linear-gradient(135deg,#0d1b2a,#1a0533);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:'Segoe UI',sans-serif;">
+    <div style="font-size:48px;margin-bottom:20px;">🎬</div>
+    <div style="font-family:Georgia,serif;font-size:28px;font-weight:700;margin-bottom:8px;">Templecity Entertainment</div>
+    <div style="font-size:13px;color:#6ee7b7;letter-spacing:3px;text-transform:uppercase;margin-bottom:32px;">Rental Manager</div>
+    <div style="display:flex;gap:8px;">
+      <div style="width:10px;height:10px;background:#6ee7b7;border-radius:50%;animation:bounce 1s infinite 0s"></div>
+      <div style="width:10px;height:10px;background:#6ee7b7;border-radius:50%;animation:bounce 1s infinite 0.2s"></div>
+      <div style="width:10px;height:10px;background:#6ee7b7;border-radius:50%;animation:bounce 1s infinite 0.4s"></div>
+    </div>
+    <div style="font-size:13px;color:#a7f3d0;margin-top:20px;">Loading your data...</div>
+  </div>
+</div>
+<style>
+  @keyframes bounce {
+    0%,100%{transform:translateY(0);opacity:0.4}
+    50%{transform:translateY(-10px);opacity:1}
+  }
+</style>
+<script>
+  // Hide loading screen once React renders
+  window.__hideLoading = function(){
+    const el = document.getElementById('loading-screen');
+    if(el) el.style.display='none';
+  };
+  // Fallback: if app doesn't load in 15 seconds show error
+  setTimeout(()=>{
+    const root = document.getElementById('root');
+    const loading = document.getElementById('loading-screen');
+    if(loading && loading.style.display !== 'none'){
+      loading.innerHTML = '<div style="text-align:center;padding:40px;color:#fff;font-family:Segoe UI,sans-serif;"><div style="font-size:48px;margin-bottom:16px;">⚠️</div><div style="font-size:20px;font-weight:700;margin-bottom:8px;">App failed to load</div><div style="font-size:14px;color:#a7f3d0;margin-bottom:24px;">Please check your internet connection and try again</div><button onclick="location.reload()" style="padding:12px 28px;background:#6ee7b7;color:#0d1b2a;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:700;">🔄 Retry</button></div>';
+    }
+  }, 15000);
+</script>
 
 <!-- Install Banner -->
 <div id="install-banner">
@@ -2128,6 +2161,7 @@ function App(){
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+if(window.__hideLoading) window.__hideLoading();
 </script>
 
 
